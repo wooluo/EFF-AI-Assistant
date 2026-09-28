@@ -2,7 +2,16 @@
 
 **网络告警研判 AI 助手**:在告警/日志页面选中内容,一键输出**明确研判结论**(攻击成功 / 攻击失败 / 存在攻击意图 / 业务行为 / 非告警事件 / 无法确认,附置信度)、证据链分析与处置建议。模型完全由本地 AI 驱动(Ollama / LM Studio),数据不出本机。
 
-研判口径移植自开源项目 [EFF-Monitoring](../EFF-Monitoring)(致谢):LLM 网关(Ollama 原生 + OpenAI 兼容双协议、流式输出、模型列表探测)移植自 `backend/app/services/ai_gateway.py`;**互斥研判标签体系**(业务行为 / 存在攻击意图 / 攻击失败 / 攻击成功 / 非告警事件 / 无法确认)与输出结构(标签、结论、关键证据、风险判断、处置建议、不确定性)对齐 `backend/app/services/ai_service.py` 的平台研判规范,插件可独立使用。
+研判口径移植自开源项目 EFF-Monitoring(致谢):LLM 网关(Ollama 原生 + OpenAI 兼容双协议、流式输出、模型列表探测)移植自 `backend/app/services/ai_gateway.py`;**互斥研判标签体系**(业务行为 / 存在攻击意图 / 攻击失败 / 攻击成功 / 非告警事件 / 无法确认)与输出结构(标签、结论、关键证据、风险判断、处置建议、不确定性)对齐 `backend/app/services/ai_service.py` 的平台研判规范,插件可独立使用。
+
+## 本仓库是什么
+
+「AlertTriage 告警研判助手」的源码仓库,包含:
+
+- **扩展全部源码** — MV3,无需构建,clone 下来即可加载运行
+- **安装包** — 每个版本的 zip 发布在 [Releases](../../releases),普通用户下载解压即用
+- **商店上架材料**(`store_assets/`)— Chrome / Edge 商店文案、隐私政策、上架操作指南
+- **开发与测试工具**(`tools/`)— 单元测试、真实联调、图标生成脚本
 
 ## 功能
 
@@ -17,14 +26,25 @@
 - 🔀 **多服务商** — Ollama(原生)/ LM Studio / 任意 OpenAI 兼容接口,每个服务商独立记忆配置;模型可点选也可手动输入
 - 🌗 自动深浅色主题,支持 Edge(Chromium 内核)
 
-## 安装(无需构建,直接加载)
+## 安装
 
-1. 打开 `chrome://extensions`(Edge 为 `edge://extensions`)
-2. 右上角打开 **开发者模式**
-3. 点击 **加载已解压的扩展程序**,选择本目录(`EFF-AI-Assistant`)
-4. (建议)点击工具栏插件图标 → **⚙ 设置**,点「刷新模型」拉取本地模型
+> 要求 Chrome / Edge 116+(侧边栏 API);扩展需要本地模型服务才能出结论,见下方「本地模型配置」。
 
-> 要求 Chrome / Edge 116+(侧边栏 API)。
+### 方式一:下载安装包(推荐)
+
+1. 到 [Releases](../../releases) 下载最新的 `AlertTriage-v*.zip` 并解压
+2. 打开 `chrome://extensions`(Edge 为 `edge://extensions`)
+3. 右上角打开 **开发者模式**
+4. 点击 **加载已解压的扩展程序**,选择解压出的目录(选含 `manifest.json` 的那一层)
+5. (建议)点击工具栏插件图标 → **⚙ 设置**,点「刷新模型」拉取本地模型
+
+### 方式二:直接加载源码(开发者)
+
+```bash
+git clone https://github.com/wooluo/EFF-AI-Assistant.git
+```
+
+clone 后同样在扩展页「加载已解压的扩展程序」,选择仓库根目录;修改代码后在扩展页点 ⟳ 重新加载即生效。
 
 ## 本地模型配置
 
@@ -85,6 +105,7 @@ EFF-AI-Assistant/
 ├── popup.html/.js/.css    # 工具栏弹窗(状态检测 + 快捷入口)
 ├── shared/common.js       # 共享常量/提示词/URL 适配纯函数
 ├── icons/                 # 图标(tools/make_icons.py 生成)
+├── store_assets/          # 商店上架材料(文案/隐私政策/上架指南,Chrome+Edge)
 └── tools/                 # 图标生成脚本 + 测试(见下)
 ```
 
