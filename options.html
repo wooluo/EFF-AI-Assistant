@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>EFF AI 助手 · 设置</title>
+  <link rel="stylesheet" href="options.css" />
+  <link rel="stylesheet" href="shared/combo.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="logo">EFF</span>
+      <h1>AI 助手设置</h1>
+    </header>
+
+    <section class="card">
+      <h2>模型服务</h2>
+
+      <label class="field">
+        <span class="field-label">服务商</span>
+        <select id="provider">
+          <option value="ollama">Ollama(原生接口,默认 11434)</option>
+          <option value="lmstudio">LM Studio(OpenAI 兼容,默认 1234)</option>
+          <option value="openai">其他 OpenAI 兼容接口(vLLM / llama.cpp / OneAPI…)</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Base URL</span>
+        <input id="baseUrl" type="text" placeholder="http://localhost:11434" spellcheck="false" />
+      </label>
+      <p class="hint" id="providerHint"></p>
+
+      <label class="field" id="apiKeyField">
+        <span class="field-label">API Key(本地服务可留空)</span>
+        <input id="apiKey" type="password" placeholder="sk-…" spellcheck="false" autocomplete="off" />
+      </label>
+
+      <div class="field">
+        <span class="field-label">模型</span>
+        <div class="row">
+          <div class="combo" id="modelCombo">
+            <input id="model" type="text" placeholder="点「刷新模型」拉取,或直接输入模型名" spellcheck="false" autocomplete="off" />
+            <div class="combo-menu" id="modelMenu" hidden></div>
+          </div>
+          <button id="btnFetchModels" class="btn secondary" title="从服务拉取模型列表">刷新模型</button>
+        </div>
+        <p class="hint" id="modelHint">点击输入框可查看/选择已拉取的模型;服务未启动时也可直接手动输入模型名。</p>
+      </div>
+
+      <div class="field">
+        <span class="field-label">测试连接</span>
+        <div class="row">
+          <button id="btnTest" class="btn primary">测试连接</button>
+          <span id="testResult" class="test-result"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>研判角色</h2>
+      <p class="hint" style="margin: 0 0 12px;">
+        不同岗位视角使用不同的系统提示词。<b>在侧边栏顶栏点击角色名即可切换</b>;此处管理角色定义。
+        点击角色展开编辑提示词。所有角色共享"数据不足必须明说、严禁编造"的纪律。
+      </p>
+      <div id="roleList" class="role-list"></div>
+      <div class="row" style="margin-top: 12px; gap: 8px;">
+        <button id="btnAddRole" class="btn secondary">＋ 新建角色</button>
+        <button id="btnResetRoles" class="btn secondary">恢复默认角色</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>生成参数</h2>
+      <div class="field">
+        <span class="field-label">温度(Temperature)<b id="tempVal">0.2</b></span>
+        <input id="temperature" type="range" min="0" max="1" step="0.05" value="0.2" />
+        <p class="hint">越低越稳定严谨。告警研判建议 0.1~0.3,保证结论一致性。</p>
+      </div>
+      <label class="field switch-field">
+        <span class="field-label">禁用思考模式(更快出结论)</span>
+        <input id="disableThink" type="checkbox" class="switch" />
+      </label>
+      <p class="hint" style="margin-top: -6px;">思考型模型(如 qwen3.5 系列)会先长时间思考再输出;开启后跳过思考直接给结论。注:个别模型(如 gemma、R1 蒸馏版)不支持服务端禁用思考参数——此时会自动附加抑制指令,并把混入正文的 <think> 思考内容归入折叠的思考块,正文保持干净。</p>
+    </section>
+
+    <section class="card">
+      <h2>划词行为</h2>
+      <label class="field switch-field">
+        <span class="field-label">划词后显示浮动按钮</span>
+        <input id="enableFloatingBar" type="checkbox" class="switch" />
+      </label>
+      <label class="field">
+        <span class="field-label">告警内容最大字符数(超出截断)</span>
+        <input id="maxSelectionChars" type="number" min="500" max="60000" step="500" />
+      </label>
+    </section>
+
+    <footer class="actions">
+      <button id="btnSave" class="btn primary big">保存设置</button>
+      <span id="saveStatus" class="test-result"></span>
+    </footer>
+
+    <p class="foot-note">
+      提示:若 Ollama 拒绝扩展访问(403),请设置环境变量 <code>OLLAMA_ORIGINS="*"</code> 后重启;
+      LM Studio 需在 Server 设置中开启 <code>Enable CORS</code>。
+    </p>
+  </div>
+
+  <script src="shared/common.js"></script>
+  <script src="shared/combo.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

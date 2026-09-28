@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AlertTriage 告警研判助手</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+  <link rel="stylesheet" href="shared/combo.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo">AT</span>
+      <span class="title">AI 助手</span>
+      <span class="role-badge" id="roleBadge" title="切换研判角色">🛡 告警研判员 ▾</span>
+      <span class="model-badge" id="modelBadge" title="当前模型">…</span>
+    </div>
+    <div class="topbar-right">
+      <button id="btnNewChat" class="icon-btn" title="新对话">＋</button>
+      <button id="btnSettings" class="icon-btn" title="设置">⚙</button>
+    </div>
+  </header>
+  <div class="role-menu" id="roleMenu" hidden></div>
+
+  <div class="model-picker" id="modelPickerWrap" hidden>
+    <div class="combo">
+      <input id="modelInput" placeholder="输入或选择模型名…" spellcheck="false" autocomplete="off" />
+      <div class="combo-menu" id="modelMenu" hidden></div>
+    </div>
+    <div class="model-picker-row">
+      <div class="model-status" id="modelStatus"></div>
+      <button id="btnApplyModel" class="apply-btn" title="应用模型">应用</button>
+    </div>
+  </div>
+
+  <main id="chatScroll" class="chat-scroll">
+    <div id="chatEmpty" class="chat-empty"></div>
+    <div id="chatList" class="chat-list"></div>
+  </main>
+
+  <footer class="composer">
+    <div id="ctxCard" class="ctx-card" hidden>
+      <div class="ctx-head">
+        <span class="ctx-tag">📎 告警引用</span>
+        <span class="ctx-title" id="ctxTitle"></span>
+        <button id="ctxToggle" class="ctx-toggle" title="展开/收起">收起</button>
+        <button id="ctxClear" class="ctx-clear" title="移除引用">×</button>
+      </div>
+      <pre id="ctxPreview" class="ctx-preview"></pre>
+    </div>
+    <div class="input-row">
+      <textarea id="input" rows="1" placeholder="输入问题或补充证据,Enter 发送(Shift+Enter 换行)…"></textarea>
+      <button id="btnAnalyzePage" class="page-btn" title="分析当前页面的告警">📄</button>
+      <button id="btnStop" class="stop-btn" hidden title="停止生成">■</button>
+      <button id="btnSend" class="send-btn" title="发送">➤</button>
+    </div>
+    <div class="composer-hint" id="composerHint">本地模型 · 对话仅保存在当前浏览器会话</div>
+  </footer>
+
+  <script src="shared/common.js"></script>
+  <script src="shared/combo.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

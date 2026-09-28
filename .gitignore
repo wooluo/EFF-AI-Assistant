@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# 真实环境告警样本(含内网 IP/明文凭证,仅本地测试用,禁止入库)
+# 克隆后如需跑 tools/test_verdict.mjs,使用仓库内的脱敏样本 sample_alert.example.json 即可
+tools/sample_alert.json
+
+# 打包产物
+*.zip

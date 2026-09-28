@@ -1,0 +1,69 @@
+/* EFF AI 助手 - 划词浮动工具条 */
+
+#effai-floating-bar {
+  position: absolute;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(24, 24, 28, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(4px) scale(0.96);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#effai-floating-bar.effai-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+#effai-floating-bar .effai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+#effai-floating-bar .effai-btn:hover {
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  color: #fff;
+}
+
+#effai-floating-bar .effai-btn:active {
+  transform: scale(0.96);
+}
+
+#effai-floating-bar .effai-btn-icon {
+  font-size: 13px;
+}
+
+@media (prefers-color-scheme: light) {
+  #effai-floating-bar {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+  #effai-floating-bar .effai-btn {
+    color: rgba(30, 30, 36, 0.85);
+  }
+}
