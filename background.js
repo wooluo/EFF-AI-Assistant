@@ -334,10 +334,11 @@ async function fetchModels(settings) {
 
 /* ==================== 侧边栏与右键菜单 ==================== */
 
-async function openSidePanelForTab(tabId) {
+/** sidePanel.open 要求用户手势上下文:直接用 sender/tab 自带的 windowId,
+ *  不先查 tabs.get,避免多余异步跳转消耗手势。 */
+async function openSidePanelForWindow(windowId) {
   try {
-    const tab = await chrome.tabs.get(tabId);
-    await chrome.sidePanel.open({ windowId: tab.windowId });
+    await chrome.sidePanel.open({ windowId });
     return true;
   } catch (err) {
     console.warn('[EFF-AI] 打开侧边栏失败:', err);
@@ -352,7 +353,7 @@ async function storePendingAsk(mode, info, tab) {
     url: (tab && tab.url) || '',
   };
   await chrome.storage.session.set({ pendingAsk: { mode, selection, ts: Date.now() } });
-  await openSidePanelForTab(tab.id);
+  await openSidePanelForWindow(tab.windowId);
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -427,12 +428,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return;
 
   if (msg.type === 'OPEN_SIDEPANEL') {
-    const tabId = sender && sender.tab ? sender.tab.id : null;
-    if (tabId != null) {
-      openSidePanelForTab(tabId).then(sendResponse);
-    } else {
+    // 划词内容随消息直达(由受信的 SW 写 session 存储,绕开 content script
+    // 对 chrome.storage.session 的默认访问限制),先落盘再开面板,
+    // 保证侧边栏首次打开时 init 就能读到 pendingAsk
+    const tab = sender && sender.tab;
+    if (!tab || tab.windowId == null) {
       sendResponse(false);
+      return true;
     }
+    (msg.payload
+      ? chrome.storage.session.set({ pendingAsk: msg.payload })
+      : Promise.resolve()
+    )
+      .catch((err) => console.warn('[EFF-AI] 保存划词内容失败:', err))
+      .then(() => openSidePanelForWindow(tab.windowId))
+      .then(sendResponse);
     return true; // async
   }
 

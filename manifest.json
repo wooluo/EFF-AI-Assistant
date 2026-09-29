@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AlertTriage 告警研判助手",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "SOC 网络告警研判 AI 助手:划选告警内容或一键分析整个页面,输出明确研判结论(攻击成功/攻击失败/存在攻击意图/业务行为/误报)+置信度+处置建议。支持 Ollama / LM Studio 本地模型,数据不出本机。",
   "minimum_chrome_version": "116",
   "permissions": [

@@ -79,6 +79,7 @@
   }
 
   function showBar() {
+    if (!extensionAlive()) { removeBar(); return; }
     const info = getSelectionInfo();
     if (!info || !enabled) { hideBar(); return; }
     latestSelection = {
@@ -95,6 +96,17 @@
     cancelHide();
   }
 
+  /** 扩展被重载/更新后,页面里残留的旧 content script 与 chrome.* 的桥接会被切断
+   *  (chrome.runtime.id 变为 undefined)。此时工具条点击只会抛
+   *  "Extension context invalidated",必须整体下线,等页面刷新注入新脚本。 */
+  function extensionAlive() {
+    try { return !!(chrome.runtime && chrome.runtime.id); } catch { return false; }
+  }
+
+  function removeBar() {
+    if (bar) { bar.remove(); bar = null; }
+  }
+
   function scheduleHide(ms) {
     cancelHide();
     hideTimer = setTimeout(hideBar, ms);
@@ -106,11 +118,18 @@
   function triggerMode(mode) {
     hideBar();
     if (!latestSelection) return;
+    if (!extensionAlive()) { removeBar(); return; }
     const payload = { mode, selection: latestSelection, ts: Date.now() };
-    chrome.storage.session
-      .set({ pendingAsk: payload })
-      .then(() => chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' }))
-      .catch(() => {});
+    // 划词内容随消息直接交给 background 落盘:content script 默认无
+    // chrome.storage.session 写权限(访问级别为仅受信上下文),在页面里写会被静默拒绝
+    try {
+      chrome.runtime
+        .sendMessage({ type: 'OPEN_SIDEPANEL', payload })
+        .catch((err) => console.warn('[EFF-AI] 唤起侧边栏失败:', err));
+    } catch (err) {
+      console.warn('[EFF-AI] 扩展已重载,请刷新本页后重试:', err);
+      removeBar();
+    }
   }
 
   let debounceTimer = null;
