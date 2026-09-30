@@ -26,6 +26,16 @@ const PROVIDERS = {
     defaultBaseUrl: 'http://localhost:1234/v1',
     hint: '任何 OpenAI 兼容网关(如 vLLM、llama.cpp server、OneAPI)。填写完整 Base URL,可留 API Key。',
   },
+  zhipu: {
+    id: 'zhipu',
+    label: '智谱云端 GLM',
+    defaultBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    hint: '智谱 GLM 云端模型(OpenAI 兼容协议,需 API Key)。GLM Coding Plan 订阅密钥使用默认专属端点;' +
+      '按量付费密钥请把 Base URL 改为 https://open.bigmodel.cn/api/paas/v4 。密钥在 bigmodel.cn 「API Keys」页面创建。',
+    cloud: true,                                   // 云端服务:数据将发送至服务商,用于 UI 出域提示与错误文案
+    presetModels: ['glm-5.3', 'glm-5.3-flash'],   // /models 接口不可用时兜底的常用模型
+    authHint: 'Coding Plan 订阅密钥配 /api/coding/paas/v4,按量付费密钥配 /api/paas/v4,密钥与端点必须匹配。',
+  },
 };
 
 const DEFAULT_SETTINGS = {
@@ -447,12 +457,14 @@ function ollamaRoot(baseUrl) {
   return url;
 }
 
-/** OpenAI 兼容接口的 /chat/completions 地址;兼容用户直接粘贴完整接口地址的情况 */
+/** OpenAI 兼容接口的 /chat/completions 地址;兼容用户直接粘贴完整接口地址的情况。
+ *  以 /v1、/v4 等版本号结尾的 Base URL(如智谱 open.bigmodel.cn/api/coding/paas/v4)直接拼接,
+ *  其余补 /v1 前缀。 */
 function openaiChatUrl(baseUrl, provider) {
   let url = normalizeBaseUrl(baseUrl);
   if (!url) url = (PROVIDERS[provider] || PROVIDERS.openai).defaultBaseUrl;
   if (url.endsWith('/chat/completions')) return url;
-  if (url.endsWith('/v1')) return `${url}/chat/completions`;
+  if (/\/v\d+$/.test(url)) return `${url}/chat/completions`;
   return `${url}/v1/chat/completions`;
 }
 

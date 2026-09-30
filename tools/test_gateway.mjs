@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url);
 
 /* ---------- 1. common.js 纯函数 ---------- */
 const common = require(path.join(root, 'shared', 'common.js'));
-const { DEFAULT_SETTINGS, DEFAULT_ROLES, buildMessages, buildModePrompt, ollamaRoot, openaiChatUrl, isLocalUrl, buildSelectionBlock, modelCacheKey, getProviderState, getActiveRole } = common;
+const { PROVIDERS, DEFAULT_SETTINGS, DEFAULT_ROLES, buildMessages, buildModePrompt, ollamaRoot, openaiChatUrl, isLocalUrl, buildSelectionBlock, modelCacheKey, getProviderState, getActiveRole } = common;
 
 // Ollama 根路径:误填 /v1 后缀要剥离(与 ai_gateway.py 一致)
 assert.equal(ollamaRoot('http://localhost:11434'), 'http://localhost:11434');
@@ -27,6 +27,11 @@ assert.equal(openaiChatUrl('http://localhost:1234', 'lmstudio'), 'http://localho
 assert.equal(openaiChatUrl('http://localhost:1234/v1', 'lmstudio'), 'http://localhost:1234/v1/chat/completions');
 assert.equal(openaiChatUrl('http://localhost:1234/v1/chat/completions', 'openai'), 'http://localhost:1234/v1/chat/completions');
 assert.equal(openaiChatUrl('', 'lmstudio'), 'http://localhost:1234/v1/chat/completions');
+
+// 智谱云端:/v4 等版本化路径直接同级拼 /chat/completions(不能补成 /v4/v1/…)
+assert.equal(openaiChatUrl('https://open.bigmodel.cn/api/coding/paas/v4', 'zhipu'), 'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions');
+assert.equal(openaiChatUrl('https://open.bigmodel.cn/api/paas/v4', 'zhipu'), 'https://open.bigmodel.cn/api/paas/v4/chat/completions');
+assert.equal(openaiChatUrl('', 'zhipu'), 'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions');
 
 assert.equal(isLocalUrl('http://127.0.0.1:1234'), true);
 assert.equal(isLocalUrl('http://192.168.1.5:1234'), false);
@@ -228,6 +233,11 @@ assert.equal(healed.baseUrl, 'http://localhost:1234/v1', '串位记忆应被丢�
 const kept = getProviderState({ providerState: { lmstudio: { baseUrl: 'http://nas:1234/v1' } } }, 'lmstudio');
 assert.equal(kept.baseUrl, 'http://nas:1234/v1');
 
+// 智谱服务商定义:云端标记 + 预置模型 + 默认端点
+assert.equal(PROVIDERS.zhipu.cloud, true);
+assert.ok(Array.isArray(PROVIDERS.zhipu.presetModels) && PROVIDERS.zhipu.presetModels.includes('glm-5.3'));
+assert.equal(getProviderState({ providerState: {} }, 'zhipu').baseUrl, 'https://open.bigmodel.cn/api/coding/paas/v4');
+
 console.log('✓ common.js 纯函数(含研判模式、提示词迁移、服务商状态)通过');
 
 /* ---------- 2. 加载 background.js(chrome 桩) ---------- */
@@ -245,11 +255,12 @@ globalThis.chrome = {
   tabs: { get: async () => ({ windowId: 1 }) },
 };
 
-// 先把 common.js 的常量/函数注入全局词法环境,再求值 background.js
+// 求值 common.js + background.js:两份源码拼成同一段全局脚本。
+// 原因:间接 eval 的 const 词法绑定(PROVIDERS 等)不跨 eval 脚本共享,
+// 拼接求值与生产环境 importScripts 的共享全局作用域语义一致,background 才能引用这些常量。
 const commonSource = readFileSync(path.join(root, 'shared', 'common.js'), 'utf8');
-(0, eval)(commonSource);
 const bgSource = readFileSync(path.join(root, 'background.js'), 'utf8');
-(0, eval)(bgSource.replace(/^importScripts\(.+\);$/m, ''));
+(0, eval)(commonSource + '\n' + bgSource.replace(/^importScripts\(.+\);$/m, ''));
 
 /* ---------- 3. buildChatRequest ---------- */
 let req = buildChatRequest(
@@ -276,7 +287,103 @@ req = buildChatRequest(
   null,
 );
 assert.equal(req.url, 'http://localhost:11434/api/chat', 'Ollama 误填 /v1 时自动纠正');
+
+// 智谱云端:走 OpenAI 兼容协议,Bearer 鉴权,默认端点为 Coding Plan 专属地址
+req = buildChatRequest(
+  [{ role: 'user', content: 'hi' }],
+  { provider: 'zhipu', baseUrl: '', model: 'glm-5.3', temperature: 0.2, apiKey: 'id.secret' },
+  null,
+);
+assert.equal(req.protocol, 'openai');
+assert.equal(req.url, 'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions');
+assert.equal(req.init.headers['Authorization'], 'Bearer id.secret');
+assert.equal(JSON.parse(req.init.body).model, 'glm-5.3');
+
+// 智谱禁用思考:按模型系列适配
+// GLM-5.3 系列(含 flash)强制思考(thinking.type 仅支持 enabled)→ 降级为最低推理强度
+{
+  const r = buildChatRequest([{ role: 'user', content: 'hi' }], { provider: 'zhipu', baseUrl: '', model: 'glm-5.3-flash', temperature: 0.2, apiKey: 'k', disableThink: true }, null);
+  const body = JSON.parse(r.init.body);
+  assert.equal(body.thinking.type, 'enabled', 'GLM-5.3 不能传 disabled(会 400)');
+  assert.equal(body.reasoning_effort, 'low', '应降级为最低推理强度');
+  assert.equal(r.degraded, true, '请求应标记为降级形态');
+}
+// 旧系列(glm-4.5/4.6/5.2)→ 真正关闭思考
+{
+  const r = buildChatRequest([{ role: 'user', content: 'hi' }], { provider: 'zhipu', baseUrl: '', model: 'glm-4.6', temperature: 0.2, apiKey: 'k', disableThink: true }, null);
+  const body = JSON.parse(r.init.body);
+  assert.equal(body.thinking.type, 'disabled');
+  assert.equal(body.reasoning_effort, undefined);
+  assert.equal(r.degraded, false);
+}
+// 未开启禁用思考 → 不发送任何思考相关参数
+{
+  const r = buildChatRequest([{ role: 'user', content: 'hi' }], { provider: 'zhipu', baseUrl: '', model: 'glm-5.3', temperature: 0.2, apiKey: 'k' }, null);
+  const body = JSON.parse(r.init.body);
+  assert.equal(body.thinking, undefined);
+  assert.equal(body.reasoning_effort, undefined);
+}
+// 显式 degraded:旧系列强制降级为最低推理强度(400 重试路径使用)
+{
+  const r = buildChatRequest([{ role: 'user', content: 'hi' }], { provider: 'zhipu', baseUrl: '', model: 'glm-6', temperature: 0.2, apiKey: 'k', disableThink: true }, null, { degraded: true });
+  const body = JSON.parse(r.init.body);
+  assert.equal(body.thinking.type, 'enabled');
+  assert.equal(body.reasoning_effort, 'low');
+}
+// 其他服务商不受思考参数影响
+{
+  const r = buildChatRequest([{ role: 'user', content: 'hi' }], { provider: 'lmstudio', baseUrl: 'http://localhost:1234/v1', model: 'qwen', temperature: 0.2, apiKey: '', disableThink: true }, null);
+  const body = JSON.parse(r.init.body);
+  assert.equal(body.thinking, undefined, '非智谱服务商不应发送 thinking 参数');
+  assert.ok(body.messages[0].content.includes('不要输出思考'), '抑制指令仍应附加');
+}
 console.log('✓ buildChatRequest 双协议 URL 适配通过');
+
+/* ---------- 3b. 智谱云端:fetchModels 探测 / 预置模型兜底 / 鉴权错误 ---------- */
+const ZHIPU_BASE = 'https://open.bigmodel.cn/api/coding/paas/v4';
+async function zhipuFetchModels(status, body) {
+  const realFetch = globalThis.fetch;
+  let capturedUrl = '';
+  let capturedHeaders = null;
+  globalThis.fetch = async (url, init) => {
+    capturedUrl = url;
+    capturedHeaders = (init && init.headers) || {};
+    return new Response(body || 'err', { status });
+  };
+  const result = await fetchModels({ provider: 'zhipu', baseUrl: ZHIPU_BASE, apiKey: 'id.secret' });
+  globalThis.fetch = realFetch;
+  return { result, capturedUrl, capturedHeaders };
+}
+// 版本化路径 /v4 → /models 直接同级拼接,且携带 Bearer 头
+{
+  const { result, capturedUrl, capturedHeaders } = await zhipuFetchModels(200, JSON.stringify({ data: [{ id: 'glm-5.3' }, { id: 'glm-5.3-flash' }] }));
+  assert.equal(capturedUrl, `${ZHIPU_BASE}/models`, '/v4 路径应直拼 /models');
+  assert.equal(capturedHeaders['Authorization'], 'Bearer id.secret');
+  assert.equal(result.ok, true);
+  assert.ok(result.models.some((m) => m.id === 'glm-5.3'));
+}
+// /models 不可用(404)→ 预置模型兜底,不报错
+{
+  const { result } = await zhipuFetchModels(404, 'not found');
+  assert.equal(result.ok, true, '404 时应回退预置模型');
+  assert.ok(result.models.some((m) => m.id === 'glm-5.3'));
+  assert.ok(result.note && result.note.includes('常用模型'));
+}
+// 密钥错误(401)→ 不得用预置模型掩盖,给出密钥/端点匹配提示
+{
+  const { result } = await zhipuFetchModels(401, JSON.stringify({ error: { message: '鉴权失败' } }));
+  assert.equal(result.ok, false, '401 时不应返回预置模型');
+  assert.ok(result.error.includes('API Key'), '应提示检查 API Key');
+  assert.ok(result.error.includes('coding/paas/v4'), '应提示密钥与端点匹配关系');
+}
+// 云端网络错误 → 代理/网络提示(而非本地服务的 Ollama 提示)
+{
+  const netErr = await explainFetchError(new TypeError('Failed to fetch'), null, 'openai', 'zhipu');
+  assert.ok(netErr.includes('智谱云端 GLM') && netErr.includes('代理'), '云端网络错误应提示网络与代理');
+  const localErr = await explainFetchError(new TypeError('Failed to fetch'), null, 'openai', 'lmstudio');
+  assert.ok(localErr.includes('服务已启动'), '本地服务网络错误保持原提示');
+}
+console.log('✓ 智谱云端:URL 适配、预置模型兜底、鉴权错误提示通过');
 
 /* ---------- 4. parseStreamLine(含思考型模型 thinking 字段) ---------- */
 assert.deepEqual(parseStreamLine('ollama', '{"message":{"role":"assistant","content":"你好"},"done":false}'), { text: '你好', phase: 'content' });
@@ -422,6 +529,43 @@ console.log('✓ 端到端 Ollama 流式对话通过');
   assert.ok(err && err.message.includes('OLLAMA_ORIGINS'), '403 时应提示 OLLAMA_ORIGINS 解决方案');
 }
 console.log('✓ 错误诊断提示(403 → OLLAMA_ORIGINS)通过');
+
+// 智谱:未识别的强制思考模型拒绝 thinking.type:disabled(400)→ 自动降级为最低推理强度重试成功
+{
+  let calls = 0;
+  const bodies = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls += 1;
+    bodies.push(JSON.parse(init.body));
+    if (calls === 1) return new Response('{"error":{"message":"thinking.type only supports enabled"}}', { status: 400 });
+    const sse = `data: ${JSON.stringify({ choices: [{ delta: { content: '结论' } }] })}\n\ndata: [DONE]\n\n`;
+    return new Response(new TextEncoder().encode(sse), { status: 200 });
+  };
+  const received = [];
+  const port = {
+    name: 'eff-ai-chat',
+    onDisconnect: { addListener: noop },
+    onMessage: { addListener: (fn) => { port._handler = fn; } },
+    postMessage: (m) => received.push(m),
+  };
+  handleChatPort(port);
+  await port._handler({
+    type: 'chat',
+    messages: [{ role: 'user', content: 'hi' }],
+    settings: { provider: 'zhipu', baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4', model: 'glm-6', temperature: 0.2, apiKey: 'k', disableThink: true },
+  });
+  globalThis.fetch = realFetch;
+  assert.equal(calls, 2, '第一次 400 后应自动降级重试一次');
+  assert.equal(bodies[0].thinking.type, 'disabled', '首次请求应尝试真正禁用思考');
+  assert.equal(bodies[1].thinking.type, 'enabled', '重试应改为最低推理强度');
+  assert.equal(bodies[1].reasoning_effort, 'low');
+  const text = received.filter((m) => m.type === 'chunk').map((m) => m.text).join('');
+  assert.equal(text, '结论', '重试后应正常收到流式正文');
+  assert.ok(received.some((m) => m.type === 'done'));
+  assert.ok(!received.some((m) => m.type === 'error'), '不应报错');
+}
+console.log('✓ 智谱 400 自动降级重试通过');
 
 /* ---------- 6. 页面提取三条路径 ---------- */
 async function testExtract(tabsImpl, scriptingImpl) {

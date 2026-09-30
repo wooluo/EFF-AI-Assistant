@@ -9,6 +9,7 @@ const els = {
   provider: $('provider'),
   baseUrl: $('baseUrl'),
   apiKeyField: $('apiKeyField'),
+  apiKeyLabel: $('apiKeyLabel'),
   apiKey: $('apiKey'),
   model: $('model'),
   modelHint: $('modelHint'),
@@ -26,6 +27,7 @@ const els = {
   btnSave: $('btnSave'),
   saveStatus: $('saveStatus'),
   providerHint: $('providerHint'),
+  cloudWarn: $('cloudWarn'),
 };
 
 /** 模型组合框:聚焦显示全部候选项,键入时才过滤(规避 datalist 按现有文本过滤的问题) */
@@ -72,7 +74,11 @@ function updateProviderUi() {
   const meta = PROVIDERS[els.provider.value];
   els.providerHint.textContent = meta.hint;
   els.baseUrl.placeholder = meta.defaultBaseUrl;
-  els.apiKeyField.hidden = els.provider.value === 'ollama';
+  const local = els.provider.value === 'ollama';
+  els.apiKeyField.hidden = local;
+  els.apiKeyLabel.textContent = meta.cloud ? 'API Key(云端服务必填)' : 'API Key(本地服务可留空)';
+  els.apiKey.placeholder = meta.cloud ? '填写服务商 API Key' : 'sk-…';
+  els.cloudWarn.hidden = !meta.cloud;
 }
 
 function applySettings(s) {
@@ -127,7 +133,7 @@ async function fetchModels(showToast) {
 
   if (resp && resp.ok && resp.models.length) {
     setModelOptions(resp.models, form.model && resp.models.some((m) => m.id === form.model) ? form.model : resp.models[0].id);
-    els.modelHint.textContent = `发现 ${resp.models.length} 个模型,来自 ${resp.models[0].owned_by}。`;
+    els.modelHint.textContent = `发现 ${resp.models.length} 个模型,来自 ${resp.models[0].owned_by}。${resp.note || ''}`;
     writeModelCache(form.provider, form.baseUrl, resp.models);
     if (showToast) setTestResult(true, `✓ 连接成功,发现 ${resp.models.length} 个模型`);
     return true;
@@ -149,6 +155,13 @@ function setTestResult(ok, text) {
 els.btnSave.addEventListener('click', async () => {
   rememberCurrentProvider(els.provider.value);
   const form = currentForm();
+  const meta = PROVIDERS[form.provider] || {};
+  if (meta.cloud && !form.apiKey) {
+    setTestResult(false, '云端服务商需要填写 API Key(智谱:bigmodel.cn → 右上角「API Keys」创建)。');
+    els.saveStatus.className = 'test-result err';
+    els.saveStatus.textContent = '未保存:缺少 API Key';
+    return;
+  }
   if (!form.model) {
     setTestResult(false, '请先选择或填写模型名称(也可点「刷新模型」自动拉取)。');
     els.saveStatus.className = 'test-result err';

@@ -5,7 +5,7 @@
 | 字段 | 填写内容 |
 |---|---|
 | 名称 | AlertTriage 告警研判助手 |
-| 简短摘要(≤132 字符) | 划词即研判:选中告警/日志,AI 输出明确结论(攻击成功/失败/误报/业务行为)+置信度+处置建议。本地模型驱动,数据不出本机。 |
+| 简短摘要(≤132 字符) | 划词即研判:选中告警/日志,AI 输出明确结论(攻击成功/失败/误报/业务行为)+置信度+处置建议。本地模型优先,云端(智谱 GLM)可选。 |
 | 类别 | 生产力工具 / Productivity |
 | 语言 | 中文(简体) |
 | 图形资产 | 图标 `icons/icon128.png`(已备);小预览图 440×280(可选) |
@@ -34,8 +34,8 @@ AlertTriage 是为安全运营(SOC)值班与告警研判打造的划词 AI 助�
 ▍研判标签体系(互斥六选一)
 业务行为 / 存在攻击意图 / 攻击失败 / 攻击成功 / 非告警事件 / 无法确认,附置信度(高/中/低)。
 
-▍本地模型,数据不出本机
-支持 Ollama、LM Studio 及任意 OpenAI 兼容接口(vLLM / llama.cpp / OneAPI)。模型地址完全由您配置,默认连本机服务;扩展无账号、无遥测、无上报,对话仅存于浏览器本地。
+▍本地模型优先,云端可选
+默认对接本机的 Ollama、LM Studio 或任意 OpenAI 兼容接口(vLLM / llama.cpp / OneAPI),数据不出本机;本地算力不足时可切换智谱云端 GLM(GLM Coding Plan),云端模式下告警内容将直连发送至智谱服务器(不经任何中间服务器),扩展内会明确提示。扩展无账号、无遥测、无上报,对话仅存于浏览器本地。
 
 ▍其他特性
 • 思考型模型(qwen3.5 系列等)思考过程实时可见,可折叠回看;可一键禁用思考加速出结论
@@ -45,7 +45,7 @@ AlertTriage 是为安全运营(SOC)值班与告警研判打造的划词 AI 助�
 
 ▍使用方法
 1. 安装后在 chrome://extensions 打开「扩展程序选项」
-2. 选择服务商(Ollama / LM Studio / OpenAI 兼容),点「刷新模型」选择模型
+2. 选择服务商(Ollama / LM Studio / 智谱云端 / OpenAI 兼容),点「刷新模型」选择模型
 3. 在任意告警页面划选内容,点浮动按钮即可研判
 
 注意:Ollama 用户需设置环境变量 OLLAMA_ORIGINS="*" 后重启服务;LM Studio 需在 Server 设置中开启 CORS。详见扩展内说明。
@@ -69,7 +69,7 @@ Honest by design: when page content is insufficient for a verdict, it says so ex
 
 Verdict labels: Business behavior / Attack intent / Attack failed / Attack succeeded / Non-alert event / Cannot determine, each with High/Medium/Low confidence.
 
-100% local-model driven: Ollama, LM Studio, or any OpenAI-compatible endpoint — configured by you, defaulting to localhost. No accounts, no telemetry, no developer servers. Conversations stay in your browser.
+Local-first by design: Ollama, LM Studio, or any OpenAI-compatible endpoint — configured by you, defaulting to localhost, keeping data on your machine. Optionally switch to the Zhipu GLM cloud (GLM Coding Plan) when local compute falls short; in cloud mode alert content goes directly from your browser to Zhipu's servers (never through developer servers), with an explicit in-extension notice. No accounts, no telemetry, no developer servers. Conversations stay in your browser.
 
 Seven switchable roles (alert triage / shift report / incident response / attack-chain reconstruction / mentor / compliance writer / quiz solver) plus custom roles. Also: live thinking display for reasoning models (collapsible), streaming Markdown output, one-click copy, per-provider model memory, dark/light themes. Requires Chrome/Edge 116+.
 
@@ -88,7 +88,7 @@ Ollama users: set OLLAMA_ORIGINS="*" and restart the service. LM Studio: enable 
 | 权限 | 理由(英文填表版) |
 |---|---|
 | `<all_urls>`(内容脚本) | `Read and change your data on all websites` — The content script only detects text selection and shows a floating action bar. Page content is read exclusively when the user selects text and clicks our button; nothing is read or transmitted otherwise. This is the same pattern used by select-to-translate extensions. |
-| `storage` | Stores the user's own model endpoint configuration (Ollama/LM Studio URL, model name) and the current conversation locally. |
+| `storage` | Stores the user's own model endpoint configuration (Ollama/LM Studio/Zhipu URL, model name, optional API key) and the current conversation locally. |
 | `sidePanel` | Displays the triage conversation UI. |
 | `contextMenus` | Adds a right-click menu entry to analyze the selected alert text. |
 | `activeTab` / `scripting` | Shows the selection toolbar on the current page when triggered by user action. |
@@ -97,7 +97,7 @@ Ollama users: set OLLAMA_ORIGINS="*" and restart the service. LM Studio: enable 
 ## 数据使用表单(Data Usage disclosure)
 
 - 收集用户数据?**否 / No**(无遥测、无账号、无上报)
-- 出售或传输给第三方?**否 / No**(AI 请求仅发往用户自行配置的端点,默认 localhost;不经开发者服务器)
+- 出售或传输给第三方?**否 / No**(AI 请求仅发往用户自行配置的端点,默认 localhost;用户主动选择云端服务商时,数据从浏览器直连该服务商,不经开发者服务器)
 - 用于与扩展核心功能无关的用途?**否 / No**
 - 是否使用凭据/财务信息/个人信息/浏览记录?**否**
 - 隐私政策 URL:见 publishing-guide.md 第 4 步

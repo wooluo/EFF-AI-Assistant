@@ -4,6 +4,7 @@
  * LLM 网关逻辑移植自 EFF-Monitoring backend/app/services/ai_gateway.py:
  *  - Ollama 原生接口(/api/chat 流式 + /api/tags 模型列表,/v1 后缀自动剥离)
  *  - OpenAI 兼容接口(/chat/completions SSE 流式 + 多候选 /models 探测,LM Studio 走此协议)
+ *  - 云端 OpenAI 兼容服务商(智谱 GLM Coding Plan:/v4 等版本化路径直拼,/models 不可用时预置模型兜底)
  *  - 连接失败时给出与原项目一致的可操作错误提示
  */
 
@@ -13,8 +14,9 @@ const CHAT_PORT_NAME = 'eff-ai-chat';
 
 /* ==================== LLM 网关 ==================== */
 
-/** 构建请求(URL + 初始化参数),按提供商适配 */
-function buildChatRequest(messages, settings, signal) {
+/** 构建请求(URL + 初始化参数),按提供商适配。
+ *  opts.degraded:true 时智谱用「最低推理强度」代替「禁用思考」(强制思考模型的降级形态)。 */
+function buildChatRequest(messages, settings, signal, opts) {
   const temperature = Number.isFinite(settings.temperature) ? settings.temperature : 0.3;
   const model = settings.model || '';
   // 禁用思考:除 think:false 参数(仅 Ollama 且需模型模板支持)外,
@@ -40,19 +42,35 @@ function buildChatRequest(messages, settings, signal) {
         body: JSON.stringify(payload),
       },
       protocol: 'ollama',
+      degraded: false,
     };
   }
   const headers = { 'Content-Type': 'application/json' };
   if (settings.apiKey) headers['Authorization'] = `Bearer ${settings.apiKey}`;
+  const payload = { model, messages, temperature, stream: true };
+  let degraded = !!(opts && opts.degraded);
+  // 智谱 GLM:GLM-5.3 系列(含 flash/flashx)官方强制思考,thinking.type 仅支持 enabled
+  // (传 disabled 会被服务端 400 拒绝),禁用思考只能降级为最低推理强度;
+  // 更早的系列(glm-4.5/4.6/5.2)支持真正关闭思考。
+  if (settings.provider === 'zhipu' && settings.disableThink) {
+    if (degraded || /^glm-5\.3/.test(model)) {
+      payload.thinking = { type: 'enabled' };
+      payload.reasoning_effort = 'low';
+      degraded = true;
+    } else {
+      payload.thinking = { type: 'disabled' };
+    }
+  }
   return {
     url: openaiChatUrl(settings.baseUrl, settings.provider),
     init: {
       method: 'POST',
       signal,
       headers,
-      body: JSON.stringify({ model, messages, temperature, stream: true }),
+      body: JSON.stringify(payload),
     },
     protocol: 'openai',
+    degraded,
   };
 }
 
@@ -143,20 +161,37 @@ function makeThinkTagSplitter(emit) {
   };
 }
 
-/** 把网络/HTTP 异常翻译为用户可读的错误提示(含 Ollama CORS 提示) */
-async function explainFetchError(err, resp, protocol) {
+/** 把网络/HTTP 异常翻译为用户可读的错误提示(本地服务提示 Ollama CORS,云端服务提示密钥/额度/代理) */
+async function explainFetchError(err, resp, protocol, providerId) {
   if (err && err.name === 'AbortError') return '已停止生成。';
+  const meta = PROVIDERS[providerId] || {};
+  const isCloud = meta.cloud === true;
   if (err && (err instanceof TypeError || /Failed to fetch|NetworkError/i.test(String(err.message || '')))) {
+    if (isCloud) {
+      return `无法连接到${meta.label}(${meta.defaultBaseUrl}):请检查网络连接与代理设置,企业内网可能需放行该域名。`;
+    }
     const who = protocol === 'ollama' ? 'Ollama 服务' : 'AI 服务';
     return `无法连接到${who},请确认:\n1. 服务已启动(ollama serve / LM Studio Server 已开启);\n2. 地址与端口正确;\n3. Ollama 需允许扩展来源:设置环境变量 OLLAMA_ORIGINS=* 后重启。`;
   }
   if (resp) {
     let detail = '';
     try { detail = (await resp.text()).slice(0, 300); } catch { /* ignore */ }
-    if (resp.status === 403 && protocol === 'ollama') {
-      return `Ollama 拒绝了扩展的访问(403)。请在启动 Ollama 前设置环境变量 OLLAMA_ORIGINS="*",并重启 Ollama。\n详情: ${detail}`;
+    if (resp.status === 401 || resp.status === 403) {
+      if (isCloud) {
+        return `鉴权失败 (HTTP ${resp.status}):请检查 API Key 是否正确。${meta.authHint || ''}\n详情: ${detail}`;
+      }
+      if (resp.status === 403 && protocol === 'ollama') {
+        return `Ollama 拒绝了扩展的访问(403)。请在启动 Ollama 前设置环境变量 OLLAMA_ORIGINS="*",并重启 Ollama。\n详情: ${detail}`;
+      }
+      return `鉴权失败 (HTTP ${resp.status}):请检查 API Key 是否正确。\n详情: ${detail}`;
+    }
+    if (resp.status === 429) {
+      return `请求受限 (HTTP 429):触发限流或套餐额度用尽,请稍后重试;云端服务可在服务商控制台查看用量。${isCloud ? '' : '\n本地服务请确认没有其他客户端占用。'}\n详情: ${detail}`;
     }
     if (resp.status === 404) {
+      if (isCloud) {
+        return `接口不存在 (404):请检查 Base URL,${meta.label} 应为 ${meta.defaultBaseUrl}。\n详情: ${detail}`;
+      }
       return `接口不存在(404),请检查 Base URL。Ollama 通常填 http://localhost:11434;LM Studio 通常填 http://localhost:1234/v1。\n详情: ${detail}`;
     }
     return `AI 服务错误 (HTTP ${resp.status}): ${detail}`;
@@ -189,16 +224,22 @@ function handleChatPort(port) {
     } catch {
       settings = Object.assign({}, DEFAULT_SETTINGS);
     }
-    const { url, init, protocol } = buildChatRequest(messages, settings, controller.signal);
+    const built = buildChatRequest(messages, settings, controller.signal);
 
     keepAliveTimer = setInterval(() => {
       chrome.runtime.getPlatformInfo(() => void chrome.runtime.lastError);
     }, 20000);
 
     try {
-      const resp = await fetch(url, init);
+      let resp = await fetch(built.url, built.init);
+      // 智谱强制思考模型拒绝 thinking.type:disabled(400)时,自动降级为最低推理强度重试一次
+      // (覆盖按模型名无法识别的未来新系列;已知 GLM-5.3 系列在构建请求时即降级,不会走到这里)
+      if (resp.status === 400 && settings.provider === 'zhipu' && settings.disableThink && !built.degraded) {
+        const retry = buildChatRequest(messages, settings, controller.signal, { degraded: true });
+        resp = await fetch(retry.url, retry.init);
+      }
       if (!resp.ok) {
-        const hint = await explainFetchError(null, resp, protocol);
+        const hint = await explainFetchError(null, resp, built.protocol, settings.provider);
         safePost(port, { type: 'error', message: hint });
         return;
       }
@@ -214,17 +255,17 @@ function handleChatPort(port) {
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
         for (const line of lines) {
-          if (protocol === 'openai') {
+          if (built.protocol === 'openai') {
             if (!line.startsWith('data:')) continue;
             const payload = line.slice(5).trim();
             if (payload === '[DONE]') continue;
-            const piece = parseStreamLine(protocol, payload);
+            const piece = parseStreamLine(built.protocol, payload);
             if (piece) {
               if (piece.phase === 'thinking') safePost(port, { type: 'chunk', text: piece.text, phase: 'thinking' });
               else splitter.feed(piece.text);
             }
           } else {
-            const piece = parseStreamLine(protocol, line);
+            const piece = parseStreamLine(built.protocol, line);
             if (piece) {
               if (piece.phase === 'thinking') safePost(port, { type: 'chunk', text: piece.text, phase: 'thinking' });
               else splitter.feed(piece.text);
@@ -236,7 +277,7 @@ function handleChatPort(port) {
       safePost(port, { type: 'done' });
     } catch (err) {
       if (!aborted) {
-        safePost(port, { type: 'error', message: await explainFetchError(err, null, protocol) });
+        safePost(port, { type: 'error', message: await explainFetchError(err, null, built.protocol, settings.provider) });
       } else {
         safePost(port, { type: 'done' });
       }
@@ -264,7 +305,7 @@ async function fetchModels(settings) {
       const url = `${ollamaRoot(baseUrl)}/api/tags`;
       const resp = await fetch(url, { signal: ctrl.signal });
       if (!resp.ok) {
-        return { ok: false, models: [], error: await explainFetchError(null, resp, 'ollama') };
+        return { ok: false, models: [], error: await explainFetchError(null, resp, 'ollama', 'ollama') };
       }
       const data = await resp.json();
       const models = (data.models || [])
@@ -286,7 +327,8 @@ async function fetchModels(settings) {
     if (baseUrl.includes('/chat/completions')) {
       candidates.push(baseUrl.replace('/chat/completions', '/models'));
     }
-    if (baseUrl.endsWith('/v1')) {
+    if (/\/v\d+$/.test(baseUrl)) {
+      // 版本化路径(如智谱 …/paas/v4、LM Studio …/v1):/models 直接同级拼接
       candidates.push(`${baseUrl}/models`);
     } else {
       candidates.push(`${baseUrl}/v1/models`);
@@ -296,16 +338,21 @@ async function fetchModels(settings) {
     if (settings.apiKey) headers['Authorization'] = `Bearer ${settings.apiKey}`;
 
     let lastError = '';
+    let authFailed = false; // 密钥错误时不拿预置模型掩盖问题,让用户先修 Key
     const seen = new Set();
     for (const url of candidates) {
       if (seen.has(url)) continue;
       seen.add(url);
       try {
         const resp = await fetch(url, { headers, signal: ctrl.signal });
-        if (!resp.ok) { lastError = `HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`; continue; }
+        if (!resp.ok) {
+          if (resp.status === 401 || resp.status === 403) authFailed = true;
+          lastError = `HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`;
+          continue;
+        }
         const data = await resp.json();
         const items = Array.isArray(data) ? data : data.data;
-        if (Array.isArray(items)) {
+        if (Array.isArray(items) && items.length) {
           const models = items
             .map((item) => typeof item === 'string' ? { id: item, owned_by: 'Other' } : { id: item.id, owned_by: item.owned_by || 'Other' })
             .filter((m) => m.id)
@@ -315,6 +362,22 @@ async function fetchModels(settings) {
       } catch (err) {
         lastError = String((err && err.message) || err);
       }
+    }
+    // 服务商未提供 /models 接口(或返回为空)→ 用预置常用模型兜底,仍可手动输入
+    const presets = (PROVIDERS[provider] && Array.isArray(PROVIDERS[provider].presetModels)) ? PROVIDERS[provider].presetModels : [];
+    if (presets.length && !authFailed) {
+      return {
+        ok: true,
+        models: presets.map((id) => ({ id, owned_by: PROVIDERS[provider].label })),
+        note: '服务端未返回模型列表,已填入常用模型,可直接使用或手动输入其他模型名。',
+      };
+    }
+    if (authFailed) {
+      return {
+        ok: false,
+        models: [],
+        error: await explainFetchError(null, { status: 401, text: async () => lastError }, 'openai', provider),
+      };
     }
     return {
       ok: false,

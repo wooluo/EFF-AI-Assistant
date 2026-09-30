@@ -22,8 +22,10 @@ globalThis.chrome = {
   contextMenus: { create: noop, onClicked: { addListener: noop } },
 };
 
-(0, eval)(readFileSync(path.join(root, 'shared', 'common.js'), 'utf8'));
-(0, eval)(readFileSync(path.join(root, 'background.js'), 'utf8').replace(/^importScripts\(.+\);$/m, ''));
+// 拼接求值:间接 eval 的 const 词法绑定(PROVIDERS 等)不跨 eval 脚本共享,
+// 拼接后与生产环境 importScripts 的共享全局作用域语义一致
+(0, eval)(readFileSync(path.join(root, 'shared', 'common.js'), 'utf8')
+  + '\n' + readFileSync(path.join(root, 'background.js'), 'utf8').replace(/^importScripts\(.+\);$/m, ''));
 
 const settings = {
   provider: 'ollama',

@@ -6,11 +6,12 @@ const $ = (id) => document.getElementById(id);
 
 async function init() {
   const s = await loadSettings();
-  $('providerLabel').textContent = PROVIDERS[s.provider] ? PROVIDERS[s.provider].label : s.provider;
+  const meta = PROVIDERS[s.provider];
+  $('providerLabel').textContent = meta ? meta.label : s.provider;
   $('modelLabel').textContent = s.model || '未选择模型';
   $('modelLabel').title = s.model || '';
   $('tip').textContent = s.enableFloatingBar !== false
-    ? '划选告警内容即可一键研判 · 本地模型驱动'
+    ? (meta && meta.cloud ? '划选告警内容即可一键研判 · 云端模型驱动' : '划选告警内容即可一键研判 · 本地模型驱动')
     : '浮动按钮已关闭,可用右键菜单研判';
 
   const dot = $('statusDot');
@@ -20,7 +21,7 @@ async function init() {
     dot.title = `服务正常,发现 ${resp.models.length} 个模型`;
   } else {
     dot.classList.add('err');
-    dot.title = (resp && resp.error) || '无法连接本地服务,请检查设置';
+    dot.title = (resp && resp.error) || '无法连接模型服务,请检查设置';
   }
 }
 

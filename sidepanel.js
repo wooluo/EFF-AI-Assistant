@@ -126,6 +126,7 @@ const els = {
   ctxPreview: document.getElementById('ctxPreview'),
   ctxToggle: document.getElementById('ctxToggle'),
   ctxClear: document.getElementById('ctxClear'),
+  composerHint: document.getElementById('composerHint'),
 };
 
 let settings = Object.assign({}, DEFAULT_SETTINGS);
@@ -161,6 +162,15 @@ async function restore() {
 
 /* 空状态欢迎页:内容跟随当前角色 */
 let emptyRenderedRoleId = null;
+let emptyRenderedCloudKey = '';
+
+/** 输入框下方提示:本地/云端随服务商变化(云端模式明确告知数据出域) */
+function renderComposerHint() {
+  const meta = PROVIDERS[settings.provider];
+  els.composerHint.textContent = (meta && meta.cloud)
+    ? `${meta.label} · 告警数据将发送至云端 · 对话仅保存在当前浏览器会话`
+    : '本地模型 · 数据不出本机 · 对话仅保存在当前浏览器会话';
+}
 
 function renderEmptyState() {
   const role = getActiveRole(settings);
@@ -175,6 +185,11 @@ function renderEmptyState() {
           '✨ 支持多轮追问补充证据',
         ],
       };
+  // 云端服务商:欢迎页中"本地运行"的表述不再成立,换成出域提示(自定义角色的描述不受影响)
+  const providerMeta = PROVIDERS[settings.provider];
+  if (providerMeta && providerMeta.cloud && /本地|不出本机/.test(w.sub || '')) {
+    w.sub = `由${providerMeta.label}云端驱动,告警数据将发送至服务商。`;
+  }
   els.chatEmpty.innerHTML = '';
   const icon = document.createElement('div');
   icon.className = 'empty-icon';
@@ -192,11 +207,14 @@ function renderEmptyState() {
   });
   els.chatEmpty.append(icon, h2, p, ul);
   emptyRenderedRoleId = role.id;
+  emptyRenderedCloudKey = (providerMeta && providerMeta.cloud) ? 'cloud' : 'local';
 }
 
 function toggleEmpty() {
   els.chatEmpty.hidden = history.length > 0;
-  if (!els.chatEmpty.hidden && emptyRenderedRoleId !== getActiveRole(settings).id) {
+  const meta = PROVIDERS[settings.provider] || {};
+  const cloudKey = meta.cloud ? 'cloud' : 'local';
+  if (!els.chatEmpty.hidden && (emptyRenderedRoleId !== getActiveRole(settings).id || emptyRenderedCloudKey !== cloudKey)) {
     renderEmptyState();
   }
 }
@@ -281,7 +299,7 @@ async function streamAssistant() {
   bubble.appendChild(cursor);
   setStreamingUI(true);
   // 首字等待提示:本地模型冷启动/思考型模型首 token 可能要几十秒
-  md.innerHTML = '<div class="waiting-hint">正在等待模型输出…<br><span>本地模型加载或思考中,复杂研判可能需要 30 秒以上</span></div>';
+  md.innerHTML = '<div class="waiting-hint">正在等待模型输出…<br><span>模型加载或思考中,复杂研判可能需要 30 秒以上</span></div>';
   scrollBottom();
 
   // 引用内容只随首条用户消息注入一次(多轮追问不再重复占用上下文);系统提示词取当前角色
@@ -631,6 +649,7 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
     settings = await loadSettings();
     renderModelBadge();
     renderRoleBadge();
+    renderComposerHint();
     toggleEmpty(); // 角色变化时刷新欢迎页内容
   }
 });
@@ -641,6 +660,7 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   settings = await loadSettings();
   renderModelBadge();
   renderRoleBadge();
+  renderComposerHint();
   renderCtxCard();
   await restore();
   await handlePendingAsk();

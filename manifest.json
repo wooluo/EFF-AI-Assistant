@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AlertTriage 告警研判助手",
-  "version": "1.7.4",
-  "description": "SOC 网络告警研判 AI 助手:划选告警内容或一键分析整个页面,输出明确研判结论(攻击成功/攻击失败/存在攻击意图/业务行为/误报)+置信度+处置建议。支持 Ollama / LM Studio 本地模型,数据不出本机。",
+  "version": "1.8.1",
+  "description": "SOC 网络告警研判 AI 助手:划选告警内容或一键分析整个页面,输出明确研判结论(攻击成功/攻击失败/存在攻击意图/业务行为/误报)+置信度+处置建议。支持 Ollama / LM Studio 本地模型,也支持智谱 GLM 云端模型(Coding Plan)。",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
@@ -24,7 +24,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "AlertTriage 告警研判助手(本地模型)",
+    "default_title": "AlertTriage 告警研判助手",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
